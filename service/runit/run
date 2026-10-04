@@ -1,0 +1,8 @@
+#!/bin/sh
+# runit service for p9c-server. Install as /etc/sv/p9c-server/run, replace
+# USER with the account that owns the data, and link the folder into the
+# runit service directory. The script runs in the foreground and exits when
+# venti dies, so runit restarts both venti and fossil.
+exec chpst -u USER:USER env HOME=/home/USER \
+	P9C_FOSSIL=/home/USER/.local/plan9/bin/fossil/fossil \
+	/home/USER/.local/bin/p9c-server 2>&1

@@ -53,7 +53,9 @@ run these lines through `cmd /c "..."`.
 1. Install plan9port. Build fossil with `patches/fossil-remove-uaf.diff`
    (stock fossil crashes when a client removes a file).
 2. Copy `bin/p9c-server` and `bin/p9c` to `~/.local/bin`.
-3. Run `P9C_FOSSIL=/path/to/patched/fossil p9c-server` under a supervisor.
+3. Run `P9C_FOSSIL=/path/to/patched/fossil p9c-server` under a supervisor
+   (runit: `service/runit/run`; replace USER, put it in `/etc/sv/p9c-server`,
+   link it into the service directory).
    The first start formats `~/plan9` (arena size `P9C_ARENAS`, default 4G).
 
 ## Check that it works
@@ -63,6 +65,18 @@ On the node, in a clone of github.com/equwal/plan9port-cluster:
 ```sh
 P9C=~/.local/bin/p9c sh tests/roundtrip.sh   # prints PASS
 ```
+
+## Mount it (Linux, optional)
+
+As root on the node, the kernel 9P client mounts the tree (fossil speaks
+plain 9P2000):
+
+```sh
+modprobe 9p
+mount -t 9p -o trans=tcp,port=5640,version=9p2000,aname=main/active,uname=$USER,access=any 127.0.0.1 /mnt/p9c
+```
+
+A server restart breaks the mount: unmount and mount again.
 
 ## Gotchas
 
