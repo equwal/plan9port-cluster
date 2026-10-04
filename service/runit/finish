@@ -1,0 +1,4 @@
+#!/bin/sh
+# runit runs this after run exits. fossil daemonizes and venti can outlive
+# p9c-server; kill both so the next start can bind its ports.
+pkill -x fossil; pkill -x venti; exit 0
