@@ -1,0 +1,7 @@
+#!/bin/sh
+# p9c: plan9port's 9p client, aimed at the cluster file server.
+#
+#   p9c ls -l /share
+#   p9c create /share/out.txt; cmd | p9c write /share/out.txt
+#   p9c read /share/out.txt
+exec "${PLAN9:-/etc/plan9}/bin/9p" -a "tcp!127.0.0.1!${P9C_PORT:-5640}" "$@"

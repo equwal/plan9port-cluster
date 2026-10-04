@@ -1,0 +1,74 @@
+#!/bin/sh
+# p9c-server: the storage node. Runs plan9port venti (archival block store)
+# and fossil (live 9P file server on top of it) from files in $P9C_DIR.
+# The first run formats the files. 9P listens on 127.0.0.1 only, with
+# authentication off: other nodes reach it through SSH tunnels (p9c-tunnel),
+# so SSH does the authentication and encryption.
+#
+#   p9c-server            # foreground; run it under a supervisor (runit)
+#
+# Environment: PLAN9 (default /etc/plan9), P9C_DIR (default ~/plan9),
+# P9C_ARENAS (arena file size, default 4G), P9C_PORT (default 5640),
+# P9C_FOSSIL (fossil binary; use one built with patches/fossil-remove-uaf.diff:
+# stock plan9port fossil crashes when a client removes a file).
+set -eu
+PLAN9=${PLAN9:-/etc/plan9}
+PATH=$PATH:$PLAN9/bin
+export PLAN9 PATH
+d=${P9C_DIR:-$HOME/plan9}
+port=${P9C_PORT:-5640}
+vaddr=tcp!127.0.0.1!17034
+mkdir -p "$d"
+cd "$d"
+
+if [ ! -f venti.conf ]; then
+	# ponytail: one arena file and one index section; add more arena
+	# files (venti/fmtarenas) when this one fills up.
+	truncate -s "${P9C_ARENAS:-4G}" arenas0
+	truncate -s 512M isect0
+	truncate -s 64M bloom
+	cat >venti.conf <<EOF
+index main
+arenas $d/arenas0
+isect $d/isect0
+bloom $d/bloom
+mem 16M
+bcmem 32M
+icmem 32M
+addr $vaddr
+httpaddr tcp!127.0.0.1!17035
+EOF
+	"$PLAN9/bin/venti/fmtisect" isect0. isect0
+	"$PLAN9/bin/venti/fmtarenas" arenas0. arenas0
+	"$PLAN9/bin/venti/fmtbloom" bloom
+	"$PLAN9/bin/venti/fmtindex" venti.conf
+fi
+
+# A fossil left over from an earlier run holds the disk and the port.
+pkill -f "fsys main config $d/fossil.disk" || true
+"$PLAN9/bin/venti/venti" -s -c venti.conf &
+venti=$!
+# wait until venti answers before fossil needs it
+i=0
+until nc -z 127.0.0.1 17034 2>/dev/null || [ $i -ge 30 ]; do sleep 1; i=$((i+1)); done
+
+if [ ! -f fossil.disk ]; then
+	truncate -s 2G fossil.disk
+	"$PLAN9/bin/fossil/flfmt" -y fossil.disk
+fi
+
+# fossil puts itself in the background. open -A turns authentication off.
+# snaptime archives to venti daily at 04:00 and keeps a temporary snapshot
+# every hour. /share is the writable tree for all nodes (unames differ per
+# host, so world-writable); on later starts create fails harmlessly
+# because it exists.
+"${P9C_FOSSIL:-$PLAN9/bin/fossil/fossil}" -c "fsys main config $d/fossil.disk" \
+	-c "fsys main venti $vaddr" \
+	-c 'fsys main open -A -c 3000' \
+	-c 'fsys main' \
+	-c 'snaptime -a 0400 -s 60' \
+	-c 'create /active/share adm adm d777' \
+	-c "listen tcp!127.0.0.1!$port"
+# The supervisor watches venti: when it dies this script exits, and the
+# restart replaces the fossil too (pkill above).
+wait $venti

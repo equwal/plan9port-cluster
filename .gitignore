@@ -1,0 +1,7 @@
+.env
+*.key
+*.disk
+arenas*
+isect*
+bloom
+venti.conf
